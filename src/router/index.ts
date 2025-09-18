@@ -11,8 +11,7 @@ const routes = [
   { path: '/login', component: LoginView },
   { path: '/calculadora', component: BudgetView },
 
-  // Estas rutas NO requieren login
-  { path: '/foto-pedidos', component: FotoConfirmacionList, meta: { requiresAuth: true } },
+  { path: '/foto-pedidos', component: FotoConfirmacionList},
   { path: '/foto-pedidos/nuevo', component: FotoConfirmacionForm },
   { path: '/foto-pedidos/editar', component: EditarPedidoView },
   {  path: '/foto-pedidos/seleccionar',  name: 'SeleccionarFotos',  component: SeleccionarFotosView},

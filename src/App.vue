@@ -7,7 +7,7 @@
           <li class="close-btn" @click="menuOpen = false">✖</li>
 
           <!-- Solo visible si el usuario está logueado -->
-          <li v-if="isAuthenticated">
+          <li>
             <router-link to="/foto-pedidos" @click="menuOpen = false">Listado de pedidos</router-link>
           </li>
           <li v-if="isAuthenticated">

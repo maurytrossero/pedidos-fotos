@@ -1,6 +1,7 @@
 <template>
   <div class="contenedor-pedidos">
-    <div class="bloque-mensaje">
+    <!-- 🔒 Bloque mensaje masivo solo si está autenticado -->
+    <div v-if="isAuthenticated" class="bloque-mensaje">
       <label for="mensaje" class="label-mensaje">Mensaje para enviar a todos:</label>
       <textarea
         id="mensaje"
@@ -9,10 +10,10 @@
         rows="4"
         placeholder="Escribí el mensaje que querés enviar a todos por WhatsApp..."
       ></textarea>
+      <button @click="enviarMensajesMasivos" class="boton-masivo" type="button">
+        Enviar mensaje a todos 📢
+      </button>
     </div>
-    <button @click="enviarMensajesMasivos" class="boton-masivo" type="button">
-      Enviar mensaje a todos 📢
-    </button>
 
     <h2 class="titulo-pedidos">Pedidos de Fotos de confirmaciones 03/10/2025</h2>
 
@@ -27,25 +28,30 @@
       >
         <div class="info-pedido">
           <p><strong>Nombre:</strong> {{ pedido.nombre }}</p>
-          <p>
-            <strong>WhatsApp:</strong> {{ pedido.whatsapp }}
-            <a
-              :href="whatsappLink(pedido.whatsapp, pedido.nombre)"
-              target="_blank"
-              rel="noopener"
-              class="link-whatsapp"
-              title="Enviar mensaje por WhatsApp"
-            >
-              📲 Enviar WhatsApp
-            </a>
-          </p>
+
+          <!-- 🔒 Mostrar WhatsApp solo si está autenticado -->
+          <template v-if="isAuthenticated">
+            <p>
+              <strong>WhatsApp:</strong> {{ pedido.whatsapp }}
+              <a
+                :href="whatsappLink(pedido.whatsapp, pedido.nombre)"
+                target="_blank"
+                rel="noopener"
+                class="link-whatsapp"
+                title="Enviar mensaje por WhatsApp"
+              >
+                📲 Enviar WhatsApp
+              </a>
+            </p>
+          </template>
+
           <p>
             <strong>Paquete:</strong> {{ pedido.paquete }} foto(s) oficiales + {{ pedido.fotosExtra }} extra(s)
           </p>
           <p><strong>Total:</strong> ${{ pedido.total }}</p>
 
-          <!-- Mostrar comprobantes -->
-          <div class="comprobantes-section">
+          <!-- 🔒 Mostrar comprobantes solo si está autenticado -->
+          <div class="comprobantes-section" v-if="isAuthenticated">
             <p><strong>Comprobantes:</strong></p>
             <div v-if="pedido.comprobantes?.length > 0">
               <ul class="comprobantes-lista">
@@ -62,7 +68,6 @@
             <p v-else>No cargados</p>
           </div>
 
-
           <p>
             <strong>Estado:</strong>
             <span :class="estadoColor(pedido.estado)">{{ pedido.estado }}</span>
@@ -73,8 +78,9 @@
         </div>
 
         <div class="acciones">
+          <!-- 🔒 Botón aprobar solo para autenticados -->
           <button
-            v-if="pedido.estado === 'pendiente'"
+            v-if="pedido.estado === 'pendiente' && isAuthenticated"
             @click="aprobarPedido(pedido.id)"
             class="boton-aprobar"
             type="button"
@@ -84,16 +90,28 @@
         </div>
       </div>
     </div>
+
+    <!-- 🔒 Total recaudado solo autenticados -->
+    <div v-if="pedidos.length > 0 && isAuthenticated" class="total-recaudado">
+      💰 <strong>Total recaudado:</strong> ${{ totalRecaudado }}
+    </div>
   </div>
 </template>
 
+
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { aprobarEstadoPedido, escucharPedidos } from '@/services/fotoConfirmacionService';
 
 const mensajeMasivo = ref('Hola, te confirmamos que recibimos tu pedido de fotos de confirmación. Muchas gracias 🙌');
 const pedidos = ref<any[]>([]);
 const loading = ref(true);
+
+// ✅ Computed para autenticación
+const isAuthenticated = computed(() => {
+  // Suponiendo que guardas el token en localStorage
+  return localStorage.getItem('token') !== null;
+});
 
 function estadoColor(estado: string) {
   return estado === 'aprobado' ? 'estado-aprobado' : 'estado-pendiente';
@@ -121,6 +139,11 @@ function enviarMensajesMasivos() {
   });
 }
 
+// 🔹 Computed para el total recaudado
+const totalRecaudado = computed(() => {
+  return pedidos.value.reduce((acc, p) => acc + (p.total || 0), 0);
+});
+
 // Suscripción en tiempo real
 let unsubscribe: (() => void) | null = null;
 
@@ -135,6 +158,7 @@ onUnmounted(() => {
   if (unsubscribe) unsubscribe();
 });
 </script>
+
 
 <style scoped>
 .contenedor-pedidos {
@@ -354,4 +378,13 @@ onUnmounted(() => {
   border-radius: 8px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
+
+.total-recaudado {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #16a34a;
+  text-align: center;
+  margin: 1rem 0 2rem;
+}
+
 </style>
