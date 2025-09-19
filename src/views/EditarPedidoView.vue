@@ -34,6 +34,15 @@
 
       <p><strong>Total:</strong> ${{ totalCalculado }}</p>
 
+      <!-- Alias -->
+      <div class="form-group">
+        <label>Transferencia a alias</label>
+        <p class="alias">mauricio.mp.cor</p>
+        <small class="alias-tip">
+          Transferí el total a este alias y luego subí una captura del/los comprobante/s. También podes cargarlos más tarde en la opción Editar pedido.
+        </small>
+      </div>
+
       <div class="form-group">
         <label class="custom-file-upload">
           <input type="file" @change="onFileChange" accept="image/*" />
@@ -325,6 +334,18 @@ select:focus {
   padding: 0.7rem;
   border-radius: 0.5rem;
   font-weight: 600;
+}
+
+/* Alias */
+.alias {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #2563eb;
+}
+
+.alias-tip {
+  font-size: 0.85rem;
+  color: #6b7280;
 }
 
 .mensaje.exito {
