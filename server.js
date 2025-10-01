@@ -15,13 +15,11 @@ const DIST_DIR = path.join(__dirname, 'dist');
 // 👇 Necesario para leer JSON
 app.use(express.json());
 
-// ⚡ Endpoint para eliminar en Cloudinary
+// ⚡ Endpoints API
 app.post('/api/cloudinary/eliminar', async (req, res) => {
   try {
     const { publicId } = req.body;
-    if (!publicId) {
-      return res.status(400).json({ error: 'Falta publicId' });
-    }
+    if (!publicId) return res.status(400).json({ error: 'Falta publicId' });
 
     const result = await cloudinary.uploader.destroy(publicId);
     res.json({ ok: true, result });
@@ -31,19 +29,17 @@ app.post('/api/cloudinary/eliminar', async (req, res) => {
   }
 });
 
-// 🔹 Servir frontend
+// 🔹 Servir frontend (SPA)
 app.use(express.static(DIST_DIR));
 
-app.use((req, res, next) => {
-  if (req.method === 'GET' && !req.path.includes('.')) {
-    res.sendFile(path.join(DIST_DIR, 'index.html'));
-  } else {
-    next();
-  }
+// Todas las rutas que no sean API y no tengan extensión van al index.html
+app.get(/^(?!\/api).*/, (req, res) => {
+  res.sendFile(path.join(DIST_DIR, 'index.html'));
 });
 
+
 // 🚀 Levantar server
-const PORT = 3000;
-app.listen(PORT, () =>
-  console.log(`Servidor corriendo en http://localhost:${PORT}`)
-);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+});
