@@ -1,94 +1,154 @@
 <template>
   <div class="editar-pedido-container">
-    <h2 class="titulo">Subir fotos de prueba</h2>
+    <h2 class="titulo">Administrar fotos</h2>
 
-    <!-- Mensaje de notificación -->
+    <!-- Mensaje -->
     <div v-if="mensaje" :class="['mensaje', tipoMensaje]">{{ mensaje }}</div>
 
-    <!-- Input de archivos -->
-    <div class="form-group">
-      <input
-        type="file"
-        multiple
-        @change="seleccionarArchivos"
-        accept="image/*"
-        class="input"
-      />
+    <!-- Controles solo si está autenticado -->
+    <div v-if="isAuthenticated" class="controls">
+      <div class="form-group">
+        <input
+          type="file"
+          multiple
+          @change="seleccionarArchivos"
+          accept="image/*"
+          class="input"
+        />
+      </div>
+      <button
+        @click="subirFotos"
+        :disabled="archivos.length === 0 || uploading"
+        class="boton"
+      >
+        {{ uploading ? 'Subiendo...' : 'Subir todas' }}
+      </button>
     </div>
 
-    <!-- Botón subir -->
-    <button
-      @click="subirFotos"
-      :disabled="archivos.length === 0"
-      class="boton"
-    >
-      Subir todas
-    </button>
+    <!-- Galería -->
+    <h3 style="margin-top:1rem;">Fotos cargadas</h3>
+    <div v-if="loadingFotos" class="mensaje info">Cargando fotos...</div>
+    <div v-else-if="fotosSubidas.length === 0" class="mensaje info">
+      No hay fotos cargadas aún.
+    </div>
 
-    <!-- Galería de fotos subidas -->
     <div class="galeria">
       <div
         v-for="foto in fotosSubidas"
-        :key="foto.url"
+        :key="foto.id ?? foto.url"
         class="foto-item"
       >
         <img
-          :src="foto.pixelada"
+          :src="foto.pixelada ?? foto.url"
           :alt="foto.nombre"
           class="foto-mini"
+          @click="abrirPreview(foto.url)"
         />
         <p class="foto-nombre">{{ foto.nombre }}</p>
+
+        <!-- Botón eliminar solo si está autenticado -->
+        <div v-if="isAuthenticated" class="foto-actions">
+          <button class="boton eliminar" @click="confirmarYEliminar(foto)">
+            Eliminar
+          </button>
+        </div>
       </div>
+    </div>
+
+    <!-- Preview -->
+    <div v-if="previewUrl" class="modal" @click.self="previewUrl = null">
+      <button class="cerrar" @click="previewUrl = null">✕</button>
+      <img :src="previewUrl" class="foto-grande" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { uploadToCloudinary, getPixelatedUrl } from '@/services/cloudinaryService'
-import { guardarFoto } from '@/services/fotoService'
+import { ref, onMounted, computed } from 'vue'
+import { uploadToCloudinary, getPixelatedUrl, eliminarDeCloudinary } from '@/services/cloudinaryService'
+import { guardarFoto, getFotosDisponibles, eliminarFoto } from '@/services/fotoService'
 
-// estado reactivo
+interface FotoSubida {
+  id?: string
+  url: string
+  publicId?: string
+  nombre: string
+  pixelada?: string
+}
+
+// Estados
 const mensaje = ref<string | null>(null)
-const tipoMensaje = ref<'exito' | 'error' | ''>('')
+const tipoMensaje = ref<'exito' | 'error' | 'info'>('info')
 const archivos = ref<File[]>([])
-const fotosSubidas = ref<{ url: string; pixelada: string; nombre: string }[]>([])
+const fotosSubidas = ref<FotoSubida[]>([])
+const uploading = ref(false)
+const loadingFotos = ref(true)
+const previewUrl = ref<string | null>(null)
 
-// funciones auxiliares
-const mostrarMensaje = (msg: string, tipo: 'exito' | 'error') => {
+// Autenticación simple (se puede mejorar con tu lógica real)
+const isAuthenticated = computed(() => localStorage.getItem('token') !== null)
+
+// Mostrar mensaje
+const mostrarMensaje = (msg: string, tipo: 'exito' | 'error' | 'info' = 'info') => {
   mensaje.value = msg
   tipoMensaje.value = tipo
   setTimeout(() => {
     mensaje.value = null
-    tipoMensaje.value = ''
-  }, 3000)
+    tipoMensaje.value = 'info'
+  }, 3500)
 }
 
+// Selección de archivos
 const seleccionarArchivos = (e: Event) => {
   const target = e.target as HTMLInputElement
-  if (target.files) {
-    archivos.value = Array.from(target.files)
+  if (target.files) archivos.value = Array.from(target.files)
+}
+
+// Cargar fotos existentes
+const eventoId = 'evento123'
+const cargarFotos = async () => {
+  loadingFotos.value = true
+  try {
+    const fotos = await getFotosDisponibles()
+    fotosSubidas.value = fotos.map(f => ({
+      id: f.id,
+      url: f.url,
+      publicId: f.publicId,
+      nombre: f.nombre,
+      pixelada: getPixelatedUrl(f.url, 20)
+    }))
+  } catch (err) {
+    console.error('Error cargando fotos:', err)
+    mostrarMensaje('Error cargando fotos', 'error')
+  } finally {
+    loadingFotos.value = false
   }
 }
 
+onMounted(() => {
+  cargarFotos()
+})
+
+// Subir fotos
 const subirFotos = async () => {
+  if (!isAuthenticated.value) {
+    mostrarMensaje('Debes estar logueado para subir fotos', 'error')
+    return
+  }
   if (archivos.value.length === 0) return
+
+  uploading.value = true
   for (const file of archivos.value) {
     try {
       const { url, publicId } = await uploadToCloudinary(file)
+      const id = await guardarFoto({ url, publicId, nombre: file.name })
 
-      // Guardar en Firestore en la colección fotosSubidas
-      await guardarFoto({
+      fotosSubidas.value.unshift({
+        id,
         url,
         publicId,
         nombre: file.name,
-        eventoId: 'evento123' // opcional
-      })
-
-      fotosSubidas.value.push({
-        url,
-        pixelada: getPixelatedUrl(url, 20),
-        nombre: file.name
+        pixelada: getPixelatedUrl(url, 20)
       })
 
       mostrarMensaje(`Foto "${file.name}" subida ✅`, 'exito')
@@ -98,15 +158,37 @@ const subirFotos = async () => {
     }
   }
   archivos.value = []
+  uploading.value = false
 }
+
+// Eliminar foto
+const confirmarYEliminar = async (foto: FotoSubida) => {
+  if (!isAuthenticated.value) {
+    mostrarMensaje('Debes estar logueado para eliminar fotos', 'error')
+    return
+  }
+  const ok = window.confirm(`¿Eliminar "${foto.nombre}"?`)
+  if (!ok) return
+
+  try {
+    if (foto.publicId) await eliminarDeCloudinary(foto.publicId)
+    if (foto.id) {
+      await eliminarFoto(foto.id)
+      fotosSubidas.value = fotosSubidas.value.filter(f => f.id !== foto.id)
+    }
+    mostrarMensaje(`Foto "${foto.nombre}" eliminada ✅`, 'exito')
+  } catch (err) {
+    console.error('Error eliminando foto', err)
+    mostrarMensaje('Error eliminando la foto', 'error')
+  }
+}
+
+// Preview
+const abrirPreview = (url: string) => previewUrl.value = url
 </script>
 
 <style scoped>
 /* Contenedor general */
-* {
-  font-family: 'Inter', sans-serif;
-  box-sizing: border-box;
-}
 .editar-pedido-container {
   max-width: 600px;
   margin: 2rem auto;
@@ -114,6 +196,8 @@ const subirFotos = async () => {
   background: #ffffff;
   border-radius: 1rem;
   box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+  font-family: 'Inter', sans-serif;
+  box-sizing: border-box;
 }
 
 /* Título */
@@ -182,12 +266,14 @@ const subirFotos = async () => {
 
 .foto-item {
   text-align: center;
+  position: relative;
 }
 
 .foto-mini {
   width: 100%;
   border-radius: 8px;
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  cursor: pointer;
   transition: transform 0.2s;
 }
 
@@ -199,6 +285,22 @@ const subirFotos = async () => {
   font-size: 0.9rem;
   margin-top: 0.3rem;
   color: #1f2937;
+}
+
+/* Acciones de cada foto */
+.foto-actions {
+  margin-top: 0.3rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.boton.eliminar {
+  background: #ef4444;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: white;
 }
 
 /* Mensajes */
@@ -218,6 +320,39 @@ const subirFotos = async () => {
 .mensaje.error {
   background-color: #ef4444;
   color: white;
+}
+
+.mensaje.info {
+  background-color: #f59e0b;
+  color: white;
+}
+
+/* Modal preview */
+.modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0,0,0,0.75);
+  z-index: 1000;
+}
+
+.foto-grande {
+  max-width: 90%;
+  max-height: 85%;
+  border-radius: 10px;
+}
+
+.cerrar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 20px;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
 }
 
 /* Responsive */

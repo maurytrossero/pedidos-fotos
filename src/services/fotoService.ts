@@ -1,54 +1,60 @@
 // src/services/fotoService.ts
-import { db } from '@/services/firebase';
-import { collection, addDoc, getDocs, serverTimestamp, orderBy, query, where } from 'firebase/firestore';
+import { db } from '@/services/firebase'
+import { collection, addDoc, getDocs, serverTimestamp, orderBy, query, doc, deleteDoc } from 'firebase/firestore'
+import { eliminarDeCloudinary } from './cloudinaryService'
 
 export interface FotoData {
-  url: string;
-  publicId: string;
-  nombre: string;
-  eventoId: string; // obligatorio para separar eventos
-  fecha?: any;
+  url: string
+  publicId: string
+  nombre: string
+  fecha?: any
 }
 
 export interface FotoSubida {
-  id: string;
-  url: string;
-  publicId: string;
-  nombre: string;
-  eventoId: string;
+  id: string
+  url: string
+  publicId: string
+  nombre: string
 }
 
-/**
- * Guarda una foto en Firestore, asociada a un evento.
- */
 export async function guardarFoto(data: FotoData) {
   try {
     const docRef = await addDoc(collection(db, 'fotosSubidas'), {
       ...data,
       fecha: serverTimestamp(),
-    });
-    return docRef.id;
+    })
+    return docRef.id
   } catch (error) {
-    console.error('Error guardando foto en Firestore:', error);
-    throw error;
+    console.error('Error guardando foto en Firestore:', error)
+    throw error
   }
 }
 
-/**
- * Obtiene las fotos disponibles para un evento específico.
- */
 export async function getFotosDisponibles(): Promise<FotoSubida[]> {
-  const fotosRef = collection(db, 'fotosSubidas');
-  const snapshot = await getDocs(fotosRef);
+  try {
+    const fotosRef = collection(db, 'fotosSubidas')
+    const q = query(fotosRef, orderBy('nombre', 'asc'))
+    const snapshot = await getDocs(q)
 
-  const fotos = snapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  })) as FotoSubida[];
-
-  // Ordenar por nombre en memoria
-  fotos.sort((a, b) => (a.nombre > b.nombre ? 1 : -1));
-
-  return fotos;
+    return snapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+    })) as FotoSubida[]
+  } catch (error) {
+    console.error('Error obteniendo fotos:', error)
+    throw error
+  }
 }
 
+// 🔹 Eliminar foto en Cloudinary + Firestore
+export async function eliminarFoto(fotoId: string, publicId?: string) {
+  try {
+    if (publicId) {
+      await eliminarDeCloudinary(publicId)
+    }
+    await deleteDoc(doc(db, 'fotosSubidas', fotoId))
+  } catch (error) {
+    console.error('Error eliminando foto:', error)
+    throw error
+  }
+}

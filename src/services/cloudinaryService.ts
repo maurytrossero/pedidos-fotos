@@ -1,5 +1,6 @@
 // src/services/cloudinaryService.ts
 import imageCompression from 'browser-image-compression';
+import axios from 'axios';
 
 const CLOUD_NAME = process.env.VUE_APP_CLOUDINARY_CLOUD_NAME as string;
 const UPLOAD_PRESET = process.env.VUE_APP_CLOUDINARY_UPLOAD_PRESET as string;
@@ -36,4 +37,14 @@ export async function uploadToCloudinary(file: File): Promise<{ url: string; pub
  */
 export function getPixelatedUrl(url: string, nivel = 30): string {
   return url.replace('/upload/', `/upload/e_pixelate:${nivel}/`);
+}
+
+export async function eliminarDeCloudinary(publicId: string) {
+  try {
+    // Endpoint del backend que debe existir (Next.js API route, Firebase Function o Express)
+    await axios.post('/api/cloudinary/eliminar', { publicId });
+  } catch (error) {
+    console.error('Error eliminando de Cloudinary', error);
+    throw error;
+  }
 }

@@ -7,65 +7,83 @@
 
     <!-- Buscar pedido -->
     <div class="form-group">
-      <input v-model="whatsapp" placeholder="Ingresá tu número de WhatsApp registrado" class="input" />
+      <input
+        v-model="whatsapp"
+        placeholder="Ingresá tu número de WhatsApp registrado"
+        class="input"
+      />
       <button @click="buscarPedido" class="boton">Buscar</button>
     </div>
 
     <!-- Pedido encontrado -->
     <div v-if="pedido" class="pedido-card">
       <p><strong>Nombre:</strong> {{ pedido.nombre }}</p>
+      <p><strong>Estado:</strong> {{ pedido.estado }}</p>
       <p><strong>Fotos permitidas:</strong> {{ maxFotos }}</p>
       <p><strong>Seleccionadas:</strong> {{ seleccionadas.length }} / {{ maxFotos }}</p>
 
-      <!-- Fotos seleccionadas -->
-      <div v-if="seleccionadas.length" class="seleccionadas">
-        <h3>Fotos Seleccionadas</h3>
-        <div class="separador"></div>
-        <div class="seleccionadas-grid">
-          <div v-for="url in seleccionadas" :key="url" class="foto-item-fija">
-            <img :src="url" class="foto-mini" />
-            <button class="boton eliminar" @click="eliminarSeleccion(url)">✕</button>
-          </div>
-        </div>
+      <!-- Mostrar aviso si el pedido no está aprobado -->
+      <div v-if="pedido.estado !== 'aprobado'" class="mensaje info">
+        Tu pedido está pendiente de pago 💳.  
+        Primero debés abonarlo para poder seleccionar tus fotos.
       </div>
 
-      <!-- Galería completa -->
-      <div class="galeria-container">
-        <h3>Elegí tus fotos de la galería para revelar</h3>
-        <div class="separador"></div>
-        <div class="galeria">
-          <div
-            v-for="foto in fotosDisponibles"
-            :key="foto.url"
-            class="foto-item"
-          >
-            <img
-              :src="foto.pixelada"
-              :alt="foto.nombre"
-              class="foto-mini"
-              @click="toggleSeleccion(foto.url)"
-              :class="{ activa: seleccionadas.includes(foto.url) }"
-            />
+      <!-- Bloquear galería si no está aprobado -->
+      <template v-else>
+        <!-- Fotos seleccionadas -->
+        <div v-if="seleccionadas.length" class="seleccionadas">
+          <h3>Fotos Seleccionadas</h3>
+          <div class="separador"></div>
+          <div class="seleccionadas-grid">
+            <div
+              v-for="url in seleccionadas"
+              :key="url"
+              class="foto-item-fija"
+            >
+              <img :src="url" class="foto-mini" />
+              <button class="boton eliminar" @click="eliminarSeleccion(url)">✕</button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <button
-        @click="guardarSeleccion"
-        class="boton secundario"
-        :disabled="seleccionadas.length === 0"
-      >
-        Guardar Selección
-      </button>
+        <!-- Galería completa -->
+        <div class="galeria-container">
+          <h3>Elegí tus fotos de la galería para revelar</h3>
+          <div class="separador"></div>
+          <div class="galeria">
+            <div
+              v-for="foto in fotosDisponibles"
+              :key="foto.url"
+              class="foto-item"
+            >
+              <img
+                :src="foto.pixelada"
+                :alt="foto.nombre"
+                class="foto-mini"
+                @click="toggleSeleccion(foto.url)"
+                :class="{ activa: seleccionadas.includes(foto.url) }"
+              />
+            </div>
+          </div>
+        </div>
+
+        <button
+          @click="guardarSeleccion"
+          class="boton secundario"
+          :disabled="seleccionadas.length === 0"
+        >
+          Guardar Selección
+        </button>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { getPedidoPorWhatsapp, actualizarPedido } from '@/services/fotoConfirmacionService';
-import { getPixelatedUrl } from '@/services/cloudinaryService';
 import { getFotosDisponibles } from '@/services/fotoService';
+import { getPixelatedUrl } from '@/services/cloudinaryService';
 
 interface Pedido {
   id: string;
@@ -73,71 +91,137 @@ interface Pedido {
   paquete: number;
   fotosExtra: number;
   seleccionadas?: string[];
+  estado?: string;
 }
 
 const whatsapp = ref('');
-const pedido = ref<Pedido|null>(null);
+const pedido = ref<Pedido | null>(null);
 const seleccionadas = ref<string[]>([]);
-const fotosDisponibles = ref<{url: string; pixelada: string; nombre: string}[]>([]);
+const fotosDisponibles = ref<{ url: string; pixelada: string; nombre: string }[]>([]);
 
 const mensaje = ref('');
-const tipoMensaje = ref<'exito' | 'error'>('exito');
+const tipoMensaje = ref<'exito' | 'error' | 'info'>('exito');
 
+// índice de la foto ampliada en fotosDisponibles (null = modal cerrado)
+const fotoAmpliadaIndex = ref<number | null>(null);
+
+// computed
 const maxFotos = computed(() => {
   if (!pedido.value) return 0;
   return (pedido.value.paquete ?? 0) + (pedido.value.fotosExtra ?? 0);
 });
+const tieneFotos = computed(() => fotosDisponibles.value.length > 0);
+const fotoActualUrl = computed(() => {
+  return fotoAmpliadaIndex.value !== null ? fotosDisponibles.value[fotoAmpliadaIndex.value]?.url ?? null : null;
+});
 
-const mostrarMensaje = (texto: string, tipo: 'exito'|'error'='exito') => {
+// mostrar mensaje temporal
+const mostrarMensaje = (texto: string, tipo: 'exito' | 'error' | 'info' = 'exito') => {
   mensaje.value = texto;
   tipoMensaje.value = tipo;
-  setTimeout(() => mensaje.value = '', 3000);
+  setTimeout(() => (mensaje.value = ''), 4000);
 };
 
+// buscar pedido por WhatsApp
 const buscarPedido = async () => {
   const resultado = await getPedidoPorWhatsapp(whatsapp.value.trim());
   if (!resultado) {
     mostrarMensaje('Pedido no encontrado ❌', 'error');
     pedido.value = null;
+    fotosDisponibles.value = [];
+    seleccionadas.value = [];
     return;
   }
+
   pedido.value = resultado;
-
-  // Traemos las fotos desde Firestore
-const fotos = await getFotosDisponibles();
-  fotosDisponibles.value = fotos.map(f => ({
-    url: f.url,
-    pixelada: getPixelatedUrl(f.url, 20), // pixelado moderado, cambiar valor si querés menos/más
-    nombre: f.nombre
-  }));
-
   seleccionadas.value = resultado.seleccionadas ?? [];
-};
+  fotosDisponibles.value = [];
 
-const toggleSeleccion = (url: string) => {
-  if (seleccionadas.value.includes(url)) {
-    seleccionadas.value = seleccionadas.value.filter(f => f !== url);
-  } else {
-    if (seleccionadas.value.length < maxFotos.value) {
-      seleccionadas.value.push(url);
-    } else {
-      mostrarMensaje(`Solo podés elegir ${maxFotos.value} fotos`, 'error');
-    }
+  // Solo cargar fotos si el pedido está aprobado
+  if (resultado.estado === 'aprobado') {
+    // 🔹 Aquí pasamos el eventoId correcto
+    // Si tus fotos en Firestore tienen 'eventoId' = pedido.id, usar resultado.id
+    // Sino, poner el eventoId fijo como 'evento123'
+    const EVENTO_ID = resultado.id; // o 'evento123' según tu Firestore
+    const fotos = await getFotosDisponibles();
+
+    fotosDisponibles.value = fotos.map(f => ({
+      url: f.url,
+      pixelada: getPixelatedUrl(f.url, 20), // versión pixelada
+      nombre: f.nombre
+    }));
   }
 };
 
+// seleccionar / deseleccionar
+const toggleSeleccion = (url: string | null) => {
+  if (!url) return;
+  if (seleccionadas.value.includes(url)) {
+    seleccionadas.value = seleccionadas.value.filter(f => f !== url);
+    return;
+  }
+  if (seleccionadas.value.length < maxFotos.value) {
+    seleccionadas.value.push(url);
+  } else {
+    mostrarMensaje(`Solo podés elegir ${maxFotos.value} fotos`, 'error');
+  }
+};
+
+// eliminar selección
 const eliminarSeleccion = (url: string) => {
   seleccionadas.value = seleccionadas.value.filter(f => f !== url);
 };
 
+// guardar selección en pedido
 const guardarSeleccion = async () => {
   if (!pedido.value) return;
   await actualizarPedido(pedido.value.id, {
     seleccionadas: seleccionadas.value
   });
-  mostrarMensaje('Selección guardada ✅');
+  mostrarMensaje('Selección guardada ✅', 'exito');
 };
+
+// abrir modal por índice
+const abrirAmpliada = (index: number) => {
+  if (index < 0 || index >= fotosDisponibles.value.length) return;
+  fotoAmpliadaIndex.value = index;
+};
+// abrir modal por URL (buscamos índice)
+const abrirAmpliadaPorUrl = (url: string) => {
+  const idx = fotosDisponibles.value.findIndex(f => f.url === url);
+  if (idx >= 0) fotoAmpliadaIndex.value = idx;
+};
+const cerrarAmpliada = () => {
+  fotoAmpliadaIndex.value = null;
+};
+
+// navegación por modal
+const siguienteFoto = () => {
+  if (fotoAmpliadaIndex.value === null || fotosDisponibles.value.length === 0) return;
+  fotoAmpliadaIndex.value = (fotoAmpliadaIndex.value + 1) % fotosDisponibles.value.length;
+};
+const anteriorFoto = () => {
+  if (fotoAmpliadaIndex.value === null || fotosDisponibles.value.length === 0) return;
+  fotoAmpliadaIndex.value = (fotoAmpliadaIndex.value - 1 + fotosDisponibles.value.length) % fotosDisponibles.value.length;
+};
+
+// teclado: ESC para cerrar, flechas para navegar
+const manejarTeclado = (e: KeyboardEvent) => {
+  if (fotoAmpliadaIndex.value === null) return;
+  if (e.key === 'Escape') cerrarAmpliada();
+  if (e.key === 'ArrowRight') siguienteFoto();
+  if (e.key === 'ArrowLeft') anteriorFoto();
+};
+
+onMounted(() => {
+  window.addEventListener('keydown', manejarTeclado);
+});
+onUnmounted(() => {
+  window.removeEventListener('keydown', manejarTeclado);
+});
 </script>
+
+
 
 <style scoped>
 * {
