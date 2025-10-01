@@ -18,17 +18,15 @@
     <!-- Pedido encontrado -->
     <div v-if="pedido" class="pedido-card">
       <p><strong>Nombre:</strong> {{ pedido.nombre }}</p>
-      <p><strong>Estado:</strong> {{ pedido.estado }}</p>
+      <p><strong>Estado:</strong> {{ pedido.estado ?? 'pendiente' }}</p>
       <p><strong>Fotos permitidas:</strong> {{ maxFotos }}</p>
       <p><strong>Seleccionadas:</strong> {{ seleccionadas.length }} / {{ maxFotos }}</p>
 
-      <!-- Mostrar aviso si el pedido no está aprobado -->
       <div v-if="pedido.estado !== 'aprobado'" class="mensaje info">
-        Tu pedido está pendiente de pago 💳.  
+        Tu pedido está pendiente de pago 💳.
         Primero debés abonarlo para poder seleccionar tus fotos.
       </div>
 
-      <!-- Bloquear galería si no está aprobado -->
       <template v-else>
         <!-- Fotos seleccionadas -->
         <div v-if="seleccionadas.length" class="seleccionadas">
@@ -41,7 +39,8 @@
               class="foto-item-fija"
             >
               <img :src="url" class="foto-mini" />
-              <button class="boton eliminar" @click="eliminarSeleccion(url)">✕</button>
+              <button class="btn-ampliar-peq" @click.stop="abrirAmpliadaPorUrl(url)" title="Ver en grande">🔍</button>
+              <button class="boton eliminar" @click="eliminarSeleccion(url)" title="Quitar selección">✕</button>
             </div>
           </div>
         </div>
@@ -52,17 +51,18 @@
           <div class="separador"></div>
           <div class="galeria">
             <div
-              v-for="foto in fotosDisponibles"
+              v-for="(foto, index) in fotosDisponibles"
               :key="foto.url"
-              class="foto-item"
+              class="foto-wrapper"
             >
               <img
-                :src="foto.pixelada"
+                :src="foto.url"
                 :alt="foto.nombre"
                 class="foto-mini"
                 @click="toggleSeleccion(foto.url)"
                 :class="{ activa: seleccionadas.includes(foto.url) }"
               />
+              <button class="btn-ampliar" @click.stop="abrirAmpliada(index)" title="Ver en grande">🔍</button>
             </div>
           </div>
         </div>
@@ -76,346 +76,183 @@
         </button>
       </template>
     </div>
+
+    <!-- Modal ampliado con navegación -->
+    <transition name="fade-zoom">
+      <div
+        v-if="fotoAmpliadaIndex !== null"
+        class="modal"
+        @click.self="cerrarAmpliada"
+      >
+        <button class="cerrar" @click="cerrarAmpliada">✕</button>
+
+        <button class="nav izquierda" @click.stop="anteriorFoto" :disabled="fotosDisponibles.length <= 1">⬅</button>
+
+        <img
+          v-if="tieneFotos && fotoAmpliadaIndex !== null"
+          :src="fotosDisponibles[fotoAmpliadaIndex].url"
+          :alt="fotosDisponibles[fotoAmpliadaIndex].nombre"
+          class="foto-grande"
+        />
+
+        <button class="nav derecha" @click.stop="siguienteFoto" :disabled="fotosDisponibles.length <= 1">➡</button>
+
+        <button class="boton seleccionar" @click="toggleSeleccion(fotoActualUrl)">
+          {{ fotoActualUrl && seleccionadas.includes(fotoActualUrl) ? 'Quitar de selección' : 'Seleccionar esta foto' }}
+        </button>
+
+        <div class="contador">
+          {{ fotoAmpliadaIndex + 1 }} / {{ fotosDisponibles.length }}
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { getPedidoPorWhatsapp, actualizarPedido } from '@/services/fotoConfirmacionService';
-import { getFotosDisponibles } from '@/services/fotoService';
-import { getPixelatedUrl } from '@/services/cloudinaryService';
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { getPedidoPorWhatsapp, actualizarPedido } from '@/services/fotoConfirmacionService'
+import { getFotosDisponibles } from '@/services/fotoService'
 
 interface Pedido {
-  id: string;
-  nombre: string;
-  paquete: number;
-  fotosExtra: number;
-  seleccionadas?: string[];
-  estado?: string;
+  id: string
+  nombre: string
+  paquete: number
+  fotosExtra: number
+  seleccionadas?: string[]
+  estado?: string
 }
 
-const whatsapp = ref('');
-const pedido = ref<Pedido | null>(null);
-const seleccionadas = ref<string[]>([]);
-const fotosDisponibles = ref<{ url: string; pixelada: string; nombre: string }[]>([]);
+const whatsapp = ref('')
+const pedido = ref<Pedido | null>(null)
+const seleccionadas = ref<string[]>([])
+const fotosDisponibles = ref<{ url: string; nombre: string }[]>([])
+const mensaje = ref('')
+const tipoMensaje = ref<'exito' | 'error' | 'info'>('exito')
 
-const mensaje = ref('');
-const tipoMensaje = ref<'exito' | 'error' | 'info'>('exito');
+// Modal y navegación
+const fotoAmpliadaIndex = ref<number | null>(null)
 
-// índice de la foto ampliada en fotosDisponibles (null = modal cerrado)
-const fotoAmpliadaIndex = ref<number | null>(null);
+const maxFotos = computed(() => (pedido.value ? (pedido.value.paquete ?? 0) + (pedido.value.fotosExtra ?? 0) : 0))
+const tieneFotos = computed(() => fotosDisponibles.value.length > 0)
+const fotoActualUrl = computed(() => (fotoAmpliadaIndex.value !== null ? fotosDisponibles.value[fotoAmpliadaIndex.value]?.url ?? null : null))
 
-// computed
-const maxFotos = computed(() => {
-  if (!pedido.value) return 0;
-  return (pedido.value.paquete ?? 0) + (pedido.value.fotosExtra ?? 0);
-});
-const tieneFotos = computed(() => fotosDisponibles.value.length > 0);
-const fotoActualUrl = computed(() => {
-  return fotoAmpliadaIndex.value !== null ? fotosDisponibles.value[fotoAmpliadaIndex.value]?.url ?? null : null;
-});
-
-// mostrar mensaje temporal
 const mostrarMensaje = (texto: string, tipo: 'exito' | 'error' | 'info' = 'exito') => {
-  mensaje.value = texto;
-  tipoMensaje.value = tipo;
-  setTimeout(() => (mensaje.value = ''), 4000);
-};
+  mensaje.value = texto
+  tipoMensaje.value = tipo
+  setTimeout(() => (mensaje.value = ''), 4000)
+}
 
-// buscar pedido por WhatsApp
 const buscarPedido = async () => {
-  const resultado = await getPedidoPorWhatsapp(whatsapp.value.trim());
+  const resultado = await getPedidoPorWhatsapp(whatsapp.value.trim())
   if (!resultado) {
-    mostrarMensaje('Pedido no encontrado ❌', 'error');
-    pedido.value = null;
-    fotosDisponibles.value = [];
-    seleccionadas.value = [];
-    return;
+    mostrarMensaje('Pedido no encontrado ❌', 'error')
+    pedido.value = null
+    fotosDisponibles.value = []
+    seleccionadas.value = []
+    return
   }
 
-  pedido.value = resultado;
-  seleccionadas.value = resultado.seleccionadas ?? [];
-  fotosDisponibles.value = [];
+  pedido.value = resultado
+  seleccionadas.value = resultado.seleccionadas ?? []
+  fotosDisponibles.value = []
 
-  // Solo cargar fotos si el pedido está aprobado
   if (resultado.estado === 'aprobado') {
-    // 🔹 Aquí pasamos el eventoId correcto
-    // Si tus fotos en Firestore tienen 'eventoId' = pedido.id, usar resultado.id
-    // Sino, poner el eventoId fijo como 'evento123'
-    const EVENTO_ID = resultado.id; // o 'evento123' según tu Firestore
-    const fotos = await getFotosDisponibles();
-
-    fotosDisponibles.value = fotos.map(f => ({
-      url: f.url,
-      pixelada: getPixelatedUrl(f.url, 20), // versión pixelada
-      nombre: f.nombre
-    }));
+    const fotos = await getFotosDisponibles()
+    fotosDisponibles.value = fotos.map(f => ({ url: f.url, nombre: f.nombre }))
   }
-};
+}
 
-// seleccionar / deseleccionar
 const toggleSeleccion = (url: string | null) => {
-  if (!url) return;
-  if (seleccionadas.value.includes(url)) {
-    seleccionadas.value = seleccionadas.value.filter(f => f !== url);
-    return;
-  }
-  if (seleccionadas.value.length < maxFotos.value) {
-    seleccionadas.value.push(url);
-  } else {
-    mostrarMensaje(`Solo podés elegir ${maxFotos.value} fotos`, 'error');
-  }
-};
+  if (!url) return
+  if (seleccionadas.value.includes(url)) seleccionadas.value = seleccionadas.value.filter(f => f !== url)
+  else if (seleccionadas.value.length < maxFotos.value) seleccionadas.value.push(url)
+  else mostrarMensaje(`Solo podés elegir ${maxFotos.value} fotos`, 'error')
+}
 
-// eliminar selección
 const eliminarSeleccion = (url: string) => {
-  seleccionadas.value = seleccionadas.value.filter(f => f !== url);
-};
+  seleccionadas.value = seleccionadas.value.filter(f => f !== url)
+}
 
-// guardar selección en pedido
 const guardarSeleccion = async () => {
-  if (!pedido.value) return;
-  await actualizarPedido(pedido.value.id, {
-    seleccionadas: seleccionadas.value
-  });
-  mostrarMensaje('Selección guardada ✅', 'exito');
-};
+  if (!pedido.value) return
+  await actualizarPedido(pedido.value.id, { seleccionadas: seleccionadas.value })
+  mostrarMensaje('Selección guardada ✅', 'exito')
+}
 
-// abrir modal por índice
+// Modal
 const abrirAmpliada = (index: number) => {
-  if (index < 0 || index >= fotosDisponibles.value.length) return;
-  fotoAmpliadaIndex.value = index;
-};
-// abrir modal por URL (buscamos índice)
+  if (index < 0 || index >= fotosDisponibles.value.length) return
+  fotoAmpliadaIndex.value = index
+}
 const abrirAmpliadaPorUrl = (url: string) => {
-  const idx = fotosDisponibles.value.findIndex(f => f.url === url);
-  if (idx >= 0) fotoAmpliadaIndex.value = idx;
-};
-const cerrarAmpliada = () => {
-  fotoAmpliadaIndex.value = null;
-};
+  const idx = fotosDisponibles.value.findIndex(f => f.url === url)
+  if (idx >= 0) fotoAmpliadaIndex.value = idx
+}
+const cerrarAmpliada = () => (fotoAmpliadaIndex.value = null)
+const siguienteFoto = () => { if (fotoAmpliadaIndex.value !== null) fotoAmpliadaIndex.value = (fotoAmpliadaIndex.value + 1) % fotosDisponibles.value.length }
+const anteriorFoto = () => { if (fotoAmpliadaIndex.value !== null) fotoAmpliadaIndex.value = (fotoAmpliadaIndex.value - 1 + fotosDisponibles.value.length) % fotosDisponibles.value.length }
 
-// navegación por modal
-const siguienteFoto = () => {
-  if (fotoAmpliadaIndex.value === null || fotosDisponibles.value.length === 0) return;
-  fotoAmpliadaIndex.value = (fotoAmpliadaIndex.value + 1) % fotosDisponibles.value.length;
-};
-const anteriorFoto = () => {
-  if (fotoAmpliadaIndex.value === null || fotosDisponibles.value.length === 0) return;
-  fotoAmpliadaIndex.value = (fotoAmpliadaIndex.value - 1 + fotosDisponibles.value.length) % fotosDisponibles.value.length;
-};
-
-// teclado: ESC para cerrar, flechas para navegar
+// teclado
 const manejarTeclado = (e: KeyboardEvent) => {
-  if (fotoAmpliadaIndex.value === null) return;
-  if (e.key === 'Escape') cerrarAmpliada();
-  if (e.key === 'ArrowRight') siguienteFoto();
-  if (e.key === 'ArrowLeft') anteriorFoto();
-};
+  if (fotoAmpliadaIndex.value === null) return
+  if (e.key === 'Escape') cerrarAmpliada()
+  if (e.key === 'ArrowRight') siguienteFoto()
+  if (e.key === 'ArrowLeft') anteriorFoto()
+}
 
-onMounted(() => {
-  window.addEventListener('keydown', manejarTeclado);
-});
-onUnmounted(() => {
-  window.removeEventListener('keydown', manejarTeclado);
-});
+onMounted(() => window.addEventListener('keydown', manejarTeclado))
+onUnmounted(() => window.removeEventListener('keydown', manejarTeclado))
 </script>
 
-
-
 <style scoped>
-* {
-  font-family: 'Inter', sans-serif;
-  box-sizing: border-box;
-}
-
 .editar-pedido-container {
   max-width: 600px;
   margin: 2rem auto;
   padding: 2rem;
   background: #ffffff;
   border-radius: 1rem;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+  font-family: 'Inter', sans-serif;
 }
 
-.titulo {
-  text-align: center;
-  font-size: 2rem;
-  font-weight: 700;
-  margin-bottom: 1.5rem;
-  color: #1f2937;
-}
+.titulo { text-align:center; font-size:2rem; margin-bottom:1.5rem; }
 
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  margin-bottom: 1.5rem;
-}
+.form-group { display:flex; gap:0.8rem; margin-bottom:1rem; }
+.input { flex:1; padding:0.7rem; border-radius:0.5rem; border:1px solid #d1d5db; }
+.boton { background:#4a90e2; color:white; padding:0.7rem 1.2rem; border:none; border-radius:0.5rem; cursor:pointer; }
+.boton.secundario { background:#10b981; }
 
-.input {
-  padding: 0.7rem;
-  border-radius: 0.5rem;
-  border: 1px solid #d1d5db;
-  font-size: 1rem;
-  background-color: #f9fafb;
-  color: #111827;
-  transition: border 0.2s, box-shadow 0.2s;
-}
+.galeria { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:0.9rem; margin-top:1rem; }
+.foto-item { position:relative; }
+.foto-mini { width:100%; height:100%; object-fit:cover; border-radius:8px; cursor:pointer; }
+.foto-mini.activa { outline:3px solid #4a90e2; }
+.btn-ampliar, .btn-ampliar-peq { position:absolute; bottom:6px; background:rgba(0,0,0,0.6); border:none; color:white; padding:4px 6px; border-radius:6px; cursor:pointer; font-size:12px; }
+.btn-ampliar { right:6px; } .btn-ampliar-peq { left:6px; }
 
-.input:focus {
-  outline: none;
-  border-color: #4a90e2;
-  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
-}
+.seleccionadas-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:0.6rem; }
+.foto-item-fija { position:relative; width:100%; padding-top:100%; }
+.foto-item-fija img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; border-radius:8px; }
+.boton.eliminar { position:absolute; top:6px; right:6px; background:#ef4444; color:white; border-radius:50%; font-size:0.8rem; padding:0.2rem 0.4rem; border:none; cursor:pointer; }
 
-.boton {
-  background-color: #4a90e2;
-  color: white;
-  padding: 0.7rem 1.2rem;
-  border: none;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-weight: 600;
-  transition: background-color 0.2s ease;
-}
+.mensaje { text-align:center; margin-bottom:1rem; padding:0.7rem; border-radius:0.5rem; font-weight:600; }
+.mensaje.exito { background:#10b981; color:white; }
+.mensaje.error { background:#ef4444; color:white; }
+.mensaje.info { background:#f59e0b; color:white; }
 
-.boton:hover {
-  background-color: #3b7bd5;
+.modal {
+  position:fixed; inset:0; display:flex; justify-content:center; align-items:center;
+  background:rgba(0,0,0,0.75); z-index:1000;
 }
+.foto-grande { max-width:90%; max-height:85%; border-radius:10px; }
+.cerrar { position:absolute; top:10px; right:10px; font-size:20px; background:none; border:none; color:white; cursor:pointer; }
 
-.boton.secundario {
-  background-color: #10b981;
-}
-
-.boton.secundario:hover {
-  background-color: #059669;
-}
-
-.boton.eliminar {
-  background-color: #ef4444;
-  padding: 0.2rem 0.4rem;
-  font-size: 0.8rem;
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  border-radius: 50%;
-  color: white;
-  cursor: pointer;
-}
-
-.boton.eliminar:hover {
-  background-color: #dc2626;
-}
-
-.pedido-card {
-  background-color: #f9fafb;
-  padding: 1.5rem;
-  border-radius: 0.75rem;
-  border: 1px solid #e5e7eb;
-  margin-top: 1rem;
-  color: #111827;
-}
-
-.galeria-container h3 {
-  margin-bottom: 0.5rem;
-  color: #1f2937;
-}
-
-.separador {
-  height: 1px;
-  background-color: #d1d5db;
-  margin: 0.5rem 0 0.8rem 0;
-}
-
-.galeria {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 1rem;
-}
-
-.foto-item {
-  cursor: pointer;
-}
-
-.foto-mini {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-  transition: transform 0.2s, border 0.2s;
-}
-
-.foto-mini:hover {
-  transform: scale(1.05);
-}
-
-.foto-mini.activa {
-  border: 3px solid #4a90e2;
-}
-
-/* Fotos seleccionadas */
-.seleccionadas {
-  margin-bottom: 1.5rem;
-}
-
-.seleccionadas h3 {
-  margin-bottom: 0.5rem;
-}
-
-.seleccionadas-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: 0.5rem;
-}
-
-.foto-item-fija {
-  position: relative;
-  width: 100%;
-  padding-top: 100%;
-}
-
-.foto-item-fija img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-}
-
-/* Mensajes */
-.mensaje {
-  text-align: center;
-  margin-bottom: 1rem;
-  padding: 0.7rem;
-  border-radius: 0.5rem;
-  font-weight: 600;
-}
-
-.mensaje.exito {
-  background-color: #10b981;
-  color: white;
-}
-
-.mensaje.error {
-  background-color: #ef4444;
-  color: white;
-}
-
-@media (max-width: 600px) {
-  .editar-pedido-container {
-    padding: 1rem;
-  }
-  .titulo {
-    font-size: 1.6rem;
-  }
-  .seleccionadas-grid {
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    gap: 0.4rem;
-  }
-}
+/* Mantener estilos previos y agregar los de modal con navegación */
+.modal { position: fixed; inset:0; display:flex; justify-content:center; align-items:center; background: rgba(0,0,0,0.85); flex-direction: column; z-index:1000; }
+.foto-grande { max-width:90%; max-height:80%; border-radius:10px; margin-bottom:0.8rem; }
+.cerrar { position:absolute; top:12px; right:12px; font-size:22px; background:none; border:none; color:white; cursor:pointer; }
+.nav { position:absolute; top:50%; transform:translateY(-50%); font-size:28px; background: rgba(0,0,0,0.4); border:none; color:white; padding:6px 10px; border-radius:6px; cursor:pointer; }
+.nav.izquierda { left:12px; } .nav.derecha { right:12px; }
+.boton.seleccionar { margin-top:6px; background:#4a90e2; color:white; padding:0.5rem 1rem; border-radius:8px; border:none; }
+.contador { color:white; margin-top:4px; }
 </style>
