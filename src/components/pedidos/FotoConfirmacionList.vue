@@ -1,6 +1,6 @@
 <template>
   <div class="contenedor-pedidos">
-    <h2 class="titulo-pedidos">Pedidos de Fotos de confirmaciones 03/10/2025</h2>
+    <h2 class="titulo-pedidos">Pedidos de Fotos de Confirmaciones 03/10/2025</h2>
 
     <!-- 🔒 Bloque mensaje masivo solo si está autenticado -->
     <div v-if="isAuthenticated" class="bloque-mensaje">
@@ -19,7 +19,7 @@
 
     <!-- 🔎 Buscador accesible para todos -->
     <div class="buscador">
-      <label for="busqueda" class="label-busqueda">Buscar pedido por nombre del niño:</label>
+      <label for="busqueda" class="label-busqueda">Buscar pedido por nombre:</label>
       <input
         id="busqueda"
         v-model="busqueda"

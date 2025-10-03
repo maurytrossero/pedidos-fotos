@@ -29,22 +29,47 @@
 
       <template v-else>
         <!-- Fotos seleccionadas -->
-        <div v-if="seleccionadasAgrupadas.length" class="seleccionadas">
+        <div v-if="seleccionadas.length" class="seleccionadas">
           <h3>Fotos Seleccionadas</h3>
           <div class="separador"></div>
           <div class="seleccionadas-grid">
             <div
-              v-for="item in seleccionadasAgrupadas"
-              :key="item.url"
+              v-for="(url, index) in seleccionadas"
+              :key="index"
               class="foto-item-fija"
             >
-              <img :src="item.url" class="foto-mini" />
-              <span class="cantidad">{{ item.cantidad }}x</span>
-              <button class="btn-ampliar-peq" @click.stop="abrirAmpliadaPorUrl(item.url)" title="Ver en grande">🔍</button>
-              <button class="boton eliminar" @click="eliminarSeleccion(item.url)" title="Quitar una copia">✕</button>
+              <img :src="url" class="foto-mini" />
+
+              <!-- Botón ampliar -->
+              <button
+                class="btn-ampliar-peq"
+                @click.stop="abrirAmpliadaPorUrl(url)"
+                title="Ver en grande"
+              >
+                🔍
+              </button>
+
+              <!-- Botón agregar otra copia -->
+              <button
+                class="boton agregar"
+                @click="toggleSeleccion(url)"
+                title="Agregar otra copia"
+              >
+                ➕
+              </button>
+
+              <!-- Botón eliminar esta copia -->
+              <button
+                class="boton eliminar"
+                @click="eliminarCopia(index)"
+                title="Quitar esta copia"
+              >
+                ✕
+              </button>
             </div>
           </div>
         </div>
+
 
         <!-- Galería completa -->
         <div class="galeria-container">
@@ -68,13 +93,14 @@
           </div>
         </div>
 
+        <!-- Botón guardar -->
         <button
           @click="guardarSeleccion"
           class="boton secundario"
-          :disabled="seleccionadas.length === 0"
         >
           Guardar Selección
         </button>
+
       </template>
     </div>
 
@@ -193,9 +219,18 @@ const eliminarSeleccion = (url: string) => {
 
 const guardarSeleccion = async () => {
   if (!pedido.value) return
+
+  // siempre mandamos array, aunque esté vacío
   await actualizarPedido(pedido.value.id, { seleccionadas: seleccionadas.value })
   mostrarMensaje('Selección guardada ✅', 'exito')
 }
+
+
+// eliminar solo la copia con ese índice
+const eliminarCopia = (index: number) => {
+  seleccionadas.value.splice(index, 1)
+}
+
 
 // Modal
 const abrirAmpliada = (index: number) => {
@@ -239,7 +274,7 @@ onUnmounted(() => window.removeEventListener('keydown', manejarTeclado))
 .input { flex:1; padding:0.7rem; border-radius:0.5rem; border:1px solid #d1d5db; }
 .boton { background:#4a90e2; color:white; padding:0.7rem 1.2rem; border:none; border-radius:0.5rem; cursor:pointer; transition: background .2s; }
 .boton:hover { background:#357ABD; }
-.boton.secundario { background:#10b981; }
+.boton.secundario { background:#10b981;   margin-top: 20px; }
 .boton.secundario:hover { background:#0b966f; }
 
 .galeria { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:0.9rem; margin-top:1rem; }
@@ -267,4 +302,17 @@ onUnmounted(() => window.removeEventListener('keydown', manejarTeclado))
 .nav.izquierda { left:12px; } .nav.derecha { right:12px; }
 .boton.seleccionar { margin-top:6px; background:#4a90e2; color:white; padding:0.5rem 1rem; border-radius:8px; border:none; }
 .contador { color:white; margin-top:4px; }
+.boton.agregar {
+  position:absolute;
+  bottom:6px;
+  right:6px;
+  background:#10b981;
+  color:white;
+  border-radius:50%;
+  font-size:0.8rem;
+  padding:0.2rem 0.4rem;
+  border:none;
+  cursor:pointer;
+}
+
 </style>
