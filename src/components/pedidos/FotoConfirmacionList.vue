@@ -1,5 +1,7 @@
 <template>
   <div class="contenedor-pedidos">
+    <h2 class="titulo-pedidos">Pedidos de Fotos de confirmaciones 03/10/2025</h2>
+
     <!-- 🔒 Bloque mensaje masivo solo si está autenticado -->
     <div v-if="isAuthenticated" class="bloque-mensaje">
       <label for="mensaje" class="label-mensaje">Mensaje para enviar a todos:</label>
@@ -15,14 +17,36 @@
       </button>
     </div>
 
-    <h2 class="titulo-pedidos">Pedidos de Fotos de confirmaciones 03/10/2025</h2>
+    <!-- 🔎 Buscador accesible para todos -->
+    <div class="buscador">
+      <label for="busqueda" class="label-busqueda">Buscar pedido por nombre del niño:</label>
+      <input
+        id="busqueda"
+        v-model="busqueda"
+        type="text"
+        placeholder="Ingresá el nombre..."
+        class="input-busqueda"
+      />
+    </div>
+
+    <!-- 🔒 Filtro solo visible si está logueado -->
+    <div v-if="isAuthenticated && pedidos.length > 0" class="filtro-pedidos">
+      <label>Filtrar por estado:</label>
+      <select v-model="filtro" class="select-filtro">
+        <option value="todos">Todos</option>
+        <option value="pendiente">Pendientes</option>
+        <option value="aprobado">Pagados</option>
+      </select>
+    </div>
 
     <div v-if="loading" class="mensaje-cargando">Cargando pedidos...</div>
-    <div v-else-if="pedidos.length === 0" class="mensaje-vacio">No hay pedidos registrados.</div>
+    <div v-else-if="pedidosFiltrados.length === 0" class="mensaje-vacio">
+      No hay pedidos registrados.
+    </div>
 
     <div v-else class="lista-pedidos">
       <div
-        v-for="pedido in pedidos"
+        v-for="pedido in pedidosFiltrados"
         :key="pedido.id"
         class="tarjeta-pedido"
       >
@@ -87,29 +111,37 @@
           >
             Aprobar
           </button>
+          <!-- Botón eliminar (solo autenticados) -->
+          <button
+            v-if="isAuthenticated"
+            @click="eliminarPedidoConfirmado(pedido.id, pedido.nombre)"
+            class="boton-eliminar"
+            type="button"
+          >
+            Eliminar
+          </button>
         </div>
       </div>
     </div>
 
     <!-- 🔒 Total recaudado solo autenticados -->
-    <div v-if="pedidos.length > 0 && isAuthenticated" class="total-recaudado">
+    <div v-if="pedidosFiltrados.length > 0 && isAuthenticated" class="total-recaudado">
       💰 <strong>Total recaudado:</strong> ${{ totalRecaudado }}
     </div>
   </div>
 </template>
 
-
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue';
-import { aprobarEstadoPedido, escucharPedidos } from '@/services/fotoConfirmacionService';
+import { aprobarEstadoPedido, escucharPedidos, eliminarPedido } from '@/services/fotoConfirmacionService';
 
 const mensajeMasivo = ref('Hola, te confirmamos que recibimos tu pedido de fotos de confirmación. Muchas gracias 🙌');
 const pedidos = ref<any[]>([]);
 const loading = ref(true);
+const filtro = ref<'todos' | 'pendiente' | 'aprobado'>('todos');
+const busqueda = ref(''); // 🆕 para buscar por nombre
 
-// ✅ Computed para autenticación
 const isAuthenticated = computed(() => {
-  // Suponiendo que guardas el token en localStorage
   return localStorage.getItem('token') !== null;
 });
 
@@ -119,6 +151,20 @@ function estadoColor(estado: string) {
 
 async function aprobarPedido(id: string) {
   await aprobarEstadoPedido(id);
+}
+
+async function eliminarPedidoConfirmado(id: string, nombre: string) {
+  const ok = window.confirm(`¿Seguro que querés eliminar el pedido de "${nombre}"? Esta acción no se puede deshacer.`);
+  if (!ok) return;
+
+  try {
+    await eliminarPedido(id);
+    pedidos.value = pedidos.value.filter(p => p.id !== id);
+    alert(`Pedido de "${nombre}" eliminado ✅`);
+  } catch (err) {
+    console.error('Error eliminando pedido:', err);
+    alert('❌ Ocurrió un error al eliminar el pedido');
+  }
 }
 
 function whatsappLink(whatsapp: string | undefined, nombre: string) {
@@ -139,12 +185,27 @@ function enviarMensajesMasivos() {
   });
 }
 
-// 🔹 Computed para el total recaudado
-const totalRecaudado = computed(() => {
-  return pedidos.value.reduce((acc, p) => acc + (p.total || 0), 0);
+const pedidosFiltrados = computed(() => {
+  let lista = pedidos.value;
+
+  // filtro por estado si está logueado
+  if (isAuthenticated.value && filtro.value !== 'todos') {
+    lista = lista.filter(p => p.estado === filtro.value);
+  }
+
+  // filtro por nombre (para todos)
+  if (busqueda.value.trim()) {
+    const texto = busqueda.value.toLowerCase();
+    lista = lista.filter(p => p.nombre?.toLowerCase().includes(texto));
+  }
+
+  return lista;
 });
 
-// Suscripción en tiempo real
+const totalRecaudado = computed(() => {
+  return pedidosFiltrados.value.reduce((acc, p) => acc + (p.total || 0), 0);
+});
+
 let unsubscribe: (() => void) | null = null;
 
 onMounted(() => {
@@ -386,5 +447,70 @@ onUnmounted(() => {
   text-align: center;
   margin: 1rem 0 2rem;
 }
+.boton-eliminar {
+  background-color: #dc2626; /* rojo */
+  color: white;
+  padding: 0.55rem 1.2rem;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  margin-left: 0.8rem;
+  box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
 
+.boton-eliminar:hover {
+  background-color: #b91c1c;
+  box-shadow: 0 6px 14px rgba(185, 28, 28, 0.6);
+}
+.filtro-pedidos {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0 2rem;
+}
+
+.select-filtro {
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/* 🆕 Estilos buscador */
+.buscador {
+  margin: 1.5rem 0;
+  text-align: center;
+}
+
+.label-busqueda {
+  display: block;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #1f2937;
+}
+
+.input-busqueda {
+  width: 100%;
+  max-width: 400px;
+  padding: 0.6rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  background-color: #f9fafb;
+  color: #111827;
+  transition: border-color 0.2s ease;
+}
+
+.input-busqueda:focus {
+  outline: none;
+  border-color: #2563eb;
+  background-color: #fff;
+  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.2);
+}
 </style>

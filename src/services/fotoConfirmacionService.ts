@@ -14,6 +14,7 @@ import {
   onSnapshot,
   orderBy,
   arrayRemove,
+  deleteDoc, 
 } from 'firebase/firestore';
 
 // ---------------------------
@@ -185,3 +186,8 @@ export const eliminarComprobante = async (pedidoId: string, comprobante: Comprob
     comprobantes: arrayRemove(comprobante),
   });
 };
+
+export async function eliminarPedido(id: string): Promise<void> {
+  const pedidoRef = doc(db, 'fotoPedidos', id);
+  await deleteDoc(pedidoRef);
+}
