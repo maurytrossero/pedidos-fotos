@@ -93,13 +93,12 @@
           </div>
         </div>
 
-        <!-- Botón guardar -->
-        <button
-          @click="guardarSeleccion"
-          class="boton secundario"
-        >
-          Guardar Selección
-        </button>
+<div class="barra-guardar">
+  <button @click="guardarSeleccion" class="boton-guardar">
+    💾 Guardar Selección
+  </button>
+</div>
+
 
       </template>
     </div>
@@ -313,6 +312,33 @@ onUnmounted(() => window.removeEventListener('keydown', manejarTeclado))
   padding:0.2rem 0.4rem;
   border:none;
   cursor:pointer;
+}
+.barra-guardar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: #ffffffcc;
+  backdrop-filter: blur(6px);
+  border-top: 1px solid #e5e7eb;
+  text-align: center;
+  padding: 1rem 0.5rem;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+  z-index: 50;
+}
+
+.boton-guardar {
+  background: #10b981;
+  color: white;
+  padding: 0.8rem 1.6rem;
+  border: none;
+  border-radius: 50px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.boton-guardar:hover {
+  background: #0b966f;
 }
 
 </style>
