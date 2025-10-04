@@ -26,7 +26,12 @@
           <router-link to="/foto-pedidos/seleccionar" @click="menuOpen = false">
             Seleccionar Fotos
           </router-link>
-        </li>
+          </li>
+          <li v-if="isAuthenticated">
+            <router-link to="/seleccion" @click="menuOpen = false">
+              Vista de Selección
+            </router-link>
+          </li>
 
         </ul>
 

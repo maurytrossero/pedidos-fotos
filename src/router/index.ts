@@ -6,6 +6,7 @@ import FotoConfirmacionList from '@/components/pedidos/FotoConfirmacionList.vue'
 import EditarPedidoView from '@/views/EditarPedidoView.vue';
 import SeleccionarFotosView from '@/views/SeleccionarFotosView.vue';
 import FotoSubida from '@/components/pedidos/FotoSubida.vue';
+import SeleccionView from '@/views/SeleccionView.vue';
 
 const routes = [
   { path: '/login', component: LoginView },
@@ -14,10 +15,13 @@ const routes = [
   { path: '/foto-pedidos', component: FotoConfirmacionList},
   { path: '/foto-pedidos/nuevo', component: FotoConfirmacionForm },
   { path: '/foto-pedidos/editar', component: EditarPedidoView },
-  {  path: '/foto-pedidos/seleccionar',  name: 'SeleccionarFotos',  component: SeleccionarFotosView},
+  { path: '/foto-pedidos/seleccionar',  name: 'SeleccionarFotos',  component: SeleccionarFotosView},
   { path: '/foto-pedidos/subir', name: 'SubirFotos', component: FotoSubida, meta: { requiresAuth: true, requiresAdmin: true } },
+  { path: '/seleccion',   name: 'Seleccion',   component: SeleccionView,   meta: { requiresAuth: true } 
+},
 
   { path: '/', redirect: '/calculadora' }
+  
 ];
 
 const router = createRouter({
