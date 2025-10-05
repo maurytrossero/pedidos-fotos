@@ -21,6 +21,8 @@
         <option value="todos">Todos</option>
         <option value="pendiente">Pendientes</option>
         <option value="aprobado">Pagados</option>
+        <option value="completos">Con fotos completas</option>
+        <option value="incompletos">Faltan fotos o sin seleccionar</option>
       </select>
     </div>
 
@@ -69,13 +71,15 @@
           <div v-if="pedido.seleccionadas?.length" class="fotos-seleccionadas">
             <h4>Fotos Seleccionadas ({{ pedido.seleccionadas.length }})</h4>
             <div class="grid-fotos">
-              <div
-                v-for="(url, i) in pedido.seleccionadas"
-                :key="i"
-                class="foto-wrapper"
-              >
-                <img :src="url" alt="Foto seleccionada" class="foto-mini" @click="verAmpliada(url)" />
-              </div>
+            <div
+            v-for="(url, i) in pedido.seleccionadas"
+            :key="i"
+            class="foto-wrapper"
+            >
+            <img :src="url" alt="Foto seleccionada" class="foto-mini" @click="verAmpliada(url)" />
+            <p class="nombre-foto">{{ obtenerNombreArchivo(url) }}</p>
+            </div>
+
             </div>
           </div>
           <p v-else class="sin-fotos">No hay fotos seleccionadas.</p>
@@ -120,7 +124,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { escucharPedidos, aprobarEstadoPedido, eliminarPedido } from '@/services/fotoConfirmacionService'
 
 const pedidos = ref<any[]>([])
-const filtro = ref<'todos' | 'pendiente' | 'aprobado'>('todos')
+const filtro = ref<'todos' | 'pendiente' | 'aprobado' | 'completos' | 'incompletos'>('todos')
 const busqueda = ref('')
 const loading = ref(true)
 const fotoAmpliada = ref<string | null>(null)
@@ -129,15 +133,38 @@ const isAuthenticated = computed(() => localStorage.getItem('token') !== null)
 
 const pedidosFiltrados = computed(() => {
   let lista = pedidos.value
-  if (isAuthenticated.value && filtro.value !== 'todos') {
+
+  // 🔒 Filtrado por estado (solo si está logueado)
+  if (isAuthenticated.value && ['pendiente', 'aprobado'].includes(filtro.value)) {
     lista = lista.filter(p => p.estado === filtro.value)
   }
+
+  // 📸 Filtrado por fotos seleccionadas
+  if (filtro.value === 'completos') {
+    lista = lista.filter(p => {
+      const totalPermitido = (p.paquete || 0) + (p.fotosExtra || 0)
+      const seleccionadas = p.seleccionadas?.length || 0
+      return seleccionadas >= totalPermitido && totalPermitido > 0
+    })
+  }
+
+  if (filtro.value === 'incompletos') {
+    lista = lista.filter(p => {
+      const totalPermitido = (p.paquete || 0) + (p.fotosExtra || 0)
+      const seleccionadas = p.seleccionadas?.length || 0
+      return seleccionadas < totalPermitido || seleccionadas === 0
+    })
+  }
+
+  // 🔎 Filtro por nombre
   if (busqueda.value.trim()) {
     const texto = busqueda.value.toLowerCase()
     lista = lista.filter(p => p.nombre?.toLowerCase().includes(texto))
   }
+
   return lista
 })
+
 
 const totalRecaudado = computed(() =>
   pedidosFiltrados.value.reduce((acc, p) => acc + (p.total || 0), 0)
@@ -170,6 +197,15 @@ function whatsappLink(whatsapp: string | undefined, nombre: string) {
 
 function verAmpliada(url: string) {
   fotoAmpliada.value = url
+}
+function obtenerNombreArchivo(url: string) {
+  try {
+    const partes = url.split('/')
+    const ultimaParte = partes[partes.length - 1]
+    return decodeURIComponent(ultimaParte.split('?')[0])
+  } catch {
+    return 'archivo'
+  }
 }
 
 let unsubscribe: (() => void) | null = null
@@ -384,6 +420,13 @@ onUnmounted(() => {
 .fade-zoom-leave-to {
   opacity: 0;
   transform: scale(0.9);
+}
+.nombre-foto {
+  font-size: 0.75rem;
+  color: #374151;
+  text-align: center;
+  margin-top: 0.2rem;
+  word-break: break-all;
 }
 
 </style>
