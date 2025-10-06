@@ -2,7 +2,7 @@
   <div class="contenedor-pedidos">
     <h2 class="titulo-pedidos">Pedidos de Fotos de Confirmaciones 03/10/2025</h2>
 
-    <!-- 🔒 Bloque mensaje masivo solo si está autenticado -->
+    <!-- Mensaje masivo solo para autenticados -->
     <div v-if="isAuthenticated" class="bloque-mensaje">
       <label for="mensaje" class="label-mensaje">Mensaje para enviar a todos:</label>
       <textarea
@@ -17,7 +17,7 @@
       </button>
     </div>
 
-    <!-- 🔎 Buscador accesible para todos -->
+    <!-- Buscador -->
     <div class="buscador">
       <label for="busqueda" class="label-busqueda">Buscar pedido por nombre:</label>
       <input
@@ -29,7 +29,7 @@
       />
     </div>
 
-    <!-- 🔒 Filtro solo visible si está logueado -->
+    <!-- Filtro estado -->
     <div v-if="isAuthenticated && pedidos.length > 0" class="filtro-pedidos">
       <label>Filtrar por estado:</label>
       <select v-model="filtro" class="select-filtro">
@@ -45,86 +45,47 @@
     </div>
 
     <div v-else class="lista-pedidos">
-      <div
-        v-for="pedido in pedidosFiltrados"
-        :key="pedido.id"
-        class="tarjeta-pedido"
-      >
+      <div v-for="pedido in pedidosFiltrados" :key="pedido.id" class="tarjeta-pedido">
         <div class="info-pedido">
           <p><strong>Nombre:</strong> {{ pedido.nombre }}</p>
 
-          <!-- 🔒 Mostrar WhatsApp solo si está autenticado -->
           <template v-if="isAuthenticated">
             <p>
               <strong>WhatsApp:</strong> {{ pedido.whatsapp }}
-              <a
-                :href="whatsappLink(pedido.whatsapp, pedido.nombre)"
-                target="_blank"
-                rel="noopener"
-                class="link-whatsapp"
-                title="Enviar mensaje por WhatsApp"
-              >
+              <a :href="whatsappLink(pedido.whatsapp, pedido.nombre)" target="_blank" rel="noopener" class="link-whatsapp" title="Enviar mensaje por WhatsApp">
                 📲 Enviar WhatsApp
               </a>
             </p>
           </template>
 
-          <p>
-            <strong>Paquete:</strong> {{ pedido.paquete }} foto(s) oficiales + {{ pedido.fotosExtra }} extra(s)
-          </p>
+          <p><strong>Paquete:</strong> {{ pedido.paquete }} foto(s) oficiales + {{ pedido.fotosExtra }} extra(s)</p>
           <p><strong>Total:</strong> ${{ pedido.total }}</p>
 
-          <!-- 🔒 Mostrar comprobantes solo si está autenticado -->
+          <!-- Comprobantes -->
           <div class="comprobantes-section" v-if="isAuthenticated">
             <p><strong>Comprobantes:</strong></p>
             <div v-if="pedido.comprobantes?.length > 0">
               <ul class="comprobantes-lista">
                 <li v-for="c in pedido.comprobantes" :key="c.nombreArchivo">
-                  <a :href="c.url" target="_blank" class="link-comprobante">
-                    {{ c.nombreArchivo }}
-                  </a>
-                  <div class="comprobante-preview">
-                    <img :src="c.url" alt="Comprobante" class="comprobante-img" />
-                  </div>
+                  <a :href="c.url" target="_blank">{{ c.nombreArchivo }}</a>
+                  <img :src="c.url" alt="Comprobante" class="comprobante-img"/>
                 </li>
               </ul>
             </div>
             <p v-else>No cargados</p>
           </div>
 
-          <p>
-            <strong>Estado:</strong>
-            <span :class="estadoColor(pedido.estado)">{{ pedido.estado }}</span>
-          </p>
-          <p class="fecha-pedido">
-            Fecha: {{ pedido.createdAt?.toDate().toLocaleString() || 'sin fecha' }}
-          </p>
+          <p><strong>Estado:</strong> <span :class="estadoColor(pedido.estado)">{{ pedido.estado || 'pendiente' }}</span></p>
+          <p class="fecha-pedido">Fecha: {{ pedido.createdAt?.toDate?.().toLocaleString() || 'sin fecha' }}</p>
         </div>
 
         <div class="acciones">
-          <!-- 🔒 Botón aprobar solo para autenticados -->
-          <button
-            v-if="pedido.estado === 'pendiente' && isAuthenticated"
-            @click="aprobarPedido(pedido.id)"
-            class="boton-aprobar"
-            type="button"
-          >
-            Aprobar
-          </button>
-          <!-- Botón eliminar (solo autenticados) -->
-          <button
-            v-if="isAuthenticated"
-            @click="eliminarPedidoConfirmado(pedido.id, pedido.nombre)"
-            class="boton-eliminar"
-            type="button"
-          >
-            Eliminar
-          </button>
+          <button v-if="pedido.estado === 'pendiente' && isAuthenticated" @click="aprobarPedido(pedido.id)" class="boton-aprobar">Aprobar</button>
+          <button v-if="isAuthenticated" @click="eliminarPedidoConfirmado(pedido.id, pedido.nombre)" class="boton-eliminar">Eliminar</button>
         </div>
       </div>
     </div>
 
-    <!-- 🔒 Total recaudado solo autenticados -->
     <div v-if="pedidosFiltrados.length > 0 && isAuthenticated" class="total-recaudado">
       💰 <strong>Total recaudado:</strong> ${{ totalRecaudado }}
     </div>
@@ -133,93 +94,109 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue';
-import { aprobarEstadoPedido, escucharPedidos, eliminarPedido } from '@/services/fotoConfirmacionService';
+import { escucharPedidos, aprobarEstadoPedido, actualizarPedido, eliminarPedido } from '@/services/fotoConfirmacionService';
 
+const PRECIO_FOTO = 4000;
 const mensajeMasivo = ref('Hola, te confirmamos que recibimos tu pedido de fotos de confirmación. Muchas gracias 🙌');
 const pedidos = ref<any[]>([]);
 const loading = ref(true);
 const filtro = ref<'todos' | 'pendiente' | 'aprobado'>('todos');
-const busqueda = ref(''); // 🆕 para buscar por nombre
+const busqueda = ref('');
 
-const isAuthenticated = computed(() => {
-  return localStorage.getItem('token') !== null;
-});
+const isAuthenticated = computed(() => !!localStorage.getItem('token'));
 
 function estadoColor(estado: string) {
   return estado === 'aprobado' ? 'estado-aprobado' : 'estado-pendiente';
 }
 
+// Aprobar pedido
 async function aprobarPedido(id: string) {
-  await aprobarEstadoPedido(id);
-}
-
-async function eliminarPedidoConfirmado(id: string, nombre: string) {
-  const ok = window.confirm(`¿Seguro que querés eliminar el pedido de "${nombre}"? Esta acción no se puede deshacer.`);
-  if (!ok) return;
-
   try {
-    await eliminarPedido(id);
-    pedidos.value = pedidos.value.filter(p => p.id !== id);
-    alert(`Pedido de "${nombre}" eliminado ✅`);
+    await aprobarEstadoPedido(id);
   } catch (err) {
-    console.error('Error eliminando pedido:', err);
-    alert('❌ Ocurrió un error al eliminar el pedido');
+    console.error(err);
+    alert('Error al aprobar el pedido');
   }
 }
 
-function whatsappLink(whatsapp: string | undefined, nombre: string) {
-  const telefono = (whatsapp || '').replace(/[^0-9]/g, '');
-  const mensaje = `Hola, te confirmamos que recibimos tu pedido de fotos para ${nombre} de confirmaciones. Estamos procesándolo.`;
-  return `https://wa.me/${telefono}?text=${encodeURIComponent(mensaje)}`;
+// Eliminar pedido
+async function eliminarPedidoConfirmado(id: string, nombre: string) {
+  if (!confirm(`¿Seguro que querés eliminar el pedido de "${nombre}"?`)) return;
+  try {
+    await eliminarPedido(id);
+    pedidos.value = pedidos.value.filter(p => p.id !== id);
+  } catch (err) {
+    console.error(err);
+    alert('No se pudo eliminar el pedido');
+  }
 }
 
+// Generar link de WhatsApp
+function whatsappLink(whatsapp: string | undefined, nombre: string) {
+  const tel = (whatsapp || '').replace(/\D/g, '');
+  const mensaje = `Hola, te confirmamos que recibimos tu pedido de fotos para ${nombre}.`;
+  return `https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`;
+}
+
+// Enviar mensajes masivos
 function enviarMensajesMasivos() {
   if (!mensajeMasivo.value.trim()) return;
-
-  pedidos.value.forEach(pedido => {
-    const telefono = (pedido.whatsapp || '').replace(/[^0-9]/g, '');
-    if (telefono) {
-      const url = `https://wa.me/${telefono}?text=${encodeURIComponent(mensajeMasivo.value)}`;
+  pedidos.value.forEach(p => {
+    const tel = (p.whatsapp || '').replace(/\D/g, '');
+    if (tel) {
+      const url = `https://wa.me/${tel}?text=${encodeURIComponent(mensajeMasivo.value)}`;
       window.open(url, '_blank');
     }
   });
 }
 
+// Filtrado + búsqueda
 const pedidosFiltrados = computed(() => {
   let lista = pedidos.value;
 
-  // filtro por estado si está logueado
   if (isAuthenticated.value && filtro.value !== 'todos') {
     lista = lista.filter(p => p.estado === filtro.value);
   }
 
-  // filtro por nombre (para todos)
   if (busqueda.value.trim()) {
-    const texto = busqueda.value.toLowerCase();
-    lista = lista.filter(p => p.nombre?.toLowerCase().includes(texto));
+    const txt = busqueda.value.toLowerCase();
+    lista = lista.filter(p => p.nombre?.toLowerCase().includes(txt));
   }
 
   return lista;
 });
 
-const totalRecaudado = computed(() => {
-  return pedidosFiltrados.value.reduce((acc, p) => acc + (p.total || 0), 0);
-});
+// Total recaudado
+const totalRecaudado = computed(() =>
+  pedidosFiltrados.value.reduce((acc, p) => {
+    const paquete = Number(p.paquete || 0);
+    const extras = Number(p.fotosExtra || 0);
+    const totalEsperado = (paquete + extras) * PRECIO_FOTO;
+    const totalFinal = p.total > 0 ? Number(p.total) : totalEsperado;
 
+    // Actualizar Firestore si total no coincide
+    if (totalFinal !== p.total) actualizarPedido(p.id, { total: totalFinal });
+
+    return acc + totalFinal;
+  }, 0)
+);
+
+// Escuchar pedidos en tiempo real
 let unsubscribe: (() => void) | null = null;
-
 onMounted(() => {
   unsubscribe = escucharPedidos((data) => {
-    pedidos.value = data;
+    pedidos.value = data.map(d => ({
+      ...d,
+      paquete: Number(d.paquete || 0),
+      fotosExtra: Number(d.fotosExtra || 0),
+      total: Number(d.total || 0)
+    }));
     loading.value = false;
   });
 });
 
-onUnmounted(() => {
-  if (unsubscribe) unsubscribe();
-});
+onUnmounted(() => { if (unsubscribe) unsubscribe(); });
 </script>
-
 
 <style scoped>
 .contenedor-pedidos {
