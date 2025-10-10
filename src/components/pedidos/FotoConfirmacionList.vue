@@ -2,7 +2,7 @@
   <div class="contenedor-pedidos">
     <h2 class="titulo-pedidos">Pedidos de Fotos de Confirmaciones 03/10/2025</h2>
 
-    <!-- Mensaje masivo solo para autenticados -->
+    <!-- Mensaje masivo -->
     <div v-if="isAuthenticated" class="bloque-mensaje">
       <label for="mensaje" class="label-mensaje">Mensaje para enviar a todos:</label>
       <textarea
@@ -44,6 +44,7 @@
       No hay pedidos registrados.
     </div>
 
+    <!-- Listado -->
     <div v-else class="lista-pedidos">
       <div v-for="pedido in pedidosFiltrados" :key="pedido.id" class="tarjeta-pedido">
         <div class="info-pedido">
@@ -52,9 +53,13 @@
           <template v-if="isAuthenticated">
             <p>
               <strong>WhatsApp:</strong> {{ pedido.whatsapp }}
-              <a :href="whatsappLink(pedido.whatsapp, pedido.nombre)" target="_blank" rel="noopener" class="link-whatsapp" title="Enviar mensaje por WhatsApp">
+              <button
+                class="link-whatsapp"
+                @click="enviarMensajeIndividual(pedido)"
+                title="Enviar mensaje por WhatsApp"
+              >
                 📲 Enviar WhatsApp
-              </a>
+              </button>
             </p>
           </template>
 
@@ -68,7 +73,7 @@
               <ul class="comprobantes-lista">
                 <li v-for="c in pedido.comprobantes" :key="c.nombreArchivo">
                   <a :href="c.url" target="_blank">{{ c.nombreArchivo }}</a>
-                  <img :src="c.url" alt="Comprobante" class="comprobante-img"/>
+                  <img :src="c.url" alt="Comprobante" class="comprobante-img" />
                 </li>
               </ul>
             </div>
@@ -93,96 +98,103 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue';
-import { escucharPedidos, aprobarEstadoPedido, actualizarPedido, eliminarPedido } from '@/services/fotoConfirmacionService';
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { escucharPedidos, aprobarEstadoPedido, actualizarPedido, eliminarPedido } from '@/services/fotoConfirmacionService'
 
-const PRECIO_FOTO = 4000;
-const mensajeMasivo = ref('Hola, te confirmamos que recibimos tu pedido de fotos de confirmación. Muchas gracias 🙌');
-const pedidos = ref<any[]>([]);
-const loading = ref(true);
-const filtro = ref<'todos' | 'pendiente' | 'aprobado'>('todos');
-const busqueda = ref('');
+const PRECIO_FOTO = 4000
+const mensajeMasivo = ref('Hola, te confirmamos que recibimos tu pedido de fotos de confirmación. Muchas gracias 🙌')
+const pedidos = ref<any[]>([])
+const loading = ref(true)
+const filtro = ref<'todos' | 'pendiente' | 'aprobado'>('todos')
+const busqueda = ref('')
 
-const isAuthenticated = computed(() => !!localStorage.getItem('token'));
+const isAuthenticated = computed(() => !!localStorage.getItem('token'))
 
 function estadoColor(estado: string) {
-  return estado === 'aprobado' ? 'estado-aprobado' : 'estado-pendiente';
+  return estado === 'aprobado' ? 'estado-aprobado' : 'estado-pendiente'
 }
 
-// Aprobar pedido
+// ✅ Función base para generar link de WhatsApp con mensaje
+function crearLinkWhatsApp(whatsapp: string, mensaje: string) {
+  const tel = (whatsapp || '').replace(/\D/g, '')
+  if (!tel) return null
+  return `https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`
+}
+
+// ✅ Enviar mensaje individual
+function enviarMensajeIndividual(pedido: any) {
+  const texto = mensajeMasivo.value.trim()
+    ? mensajeMasivo.value
+    : `Hola, te confirmamos que recibimos tu pedido de fotos para ${pedido.nombre}. Muchas gracias 🙌`
+
+  const url = crearLinkWhatsApp(pedido.whatsapp, texto)
+  if (url) window.open(url, '_blank')
+}
+
+// ✅ Enviar mensajes masivos (uno por uno para evitar bloqueos)
+function enviarMensajesMasivos() {
+  if (!mensajeMasivo.value.trim()) {
+    alert('Por favor, escribí un mensaje antes de enviarlo.')
+    return
+  }
+  if (!confirm(`¿Seguro que querés enviar este mensaje a ${pedidosFiltrados.value.length} personas?`)) return
+
+  const lista = pedidosFiltrados.value.filter(p => !!p.whatsapp)
+  lista.forEach((p, i) => {
+    setTimeout(() => {
+      const url = crearLinkWhatsApp(p.whatsapp, mensajeMasivo.value)
+      if (url) window.open(url, '_blank')
+    }, i * 1500)
+  })
+}
+
+// ✅ Aprobar pedido
 async function aprobarPedido(id: string) {
   try {
-    await aprobarEstadoPedido(id);
+    await aprobarEstadoPedido(id)
   } catch (err) {
-    console.error(err);
-    alert('Error al aprobar el pedido');
+    console.error(err)
+    alert('Error al aprobar el pedido')
   }
 }
 
-// Eliminar pedido
+// ✅ Eliminar pedido
 async function eliminarPedidoConfirmado(id: string, nombre: string) {
-  if (!confirm(`¿Seguro que querés eliminar el pedido de "${nombre}"?`)) return;
+  if (!confirm(`¿Seguro que querés eliminar el pedido de "${nombre}"?`)) return
   try {
-    await eliminarPedido(id);
-    pedidos.value = pedidos.value.filter(p => p.id !== id);
+    await eliminarPedido(id)
+    pedidos.value = pedidos.value.filter(p => p.id !== id)
   } catch (err) {
-    console.error(err);
-    alert('No se pudo eliminar el pedido');
+    console.error(err)
+    alert('No se pudo eliminar el pedido')
   }
 }
 
-// Generar link de WhatsApp
-function whatsappLink(whatsapp: string | undefined, nombre: string) {
-  const tel = (whatsapp || '').replace(/\D/g, '');
-  const mensaje = `Hola, te confirmamos que recibimos tu pedido de fotos para ${nombre}.`;
-  return `https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`;
-}
-
-// Enviar mensajes masivos
-function enviarMensajesMasivos() {
-  if (!mensajeMasivo.value.trim()) return;
-  pedidos.value.forEach(p => {
-    const tel = (p.whatsapp || '').replace(/\D/g, '');
-    if (tel) {
-      const url = `https://wa.me/${tel}?text=${encodeURIComponent(mensajeMasivo.value)}`;
-      window.open(url, '_blank');
-    }
-  });
-}
-
-// Filtrado + búsqueda
+// ✅ Filtrado + búsqueda
 const pedidosFiltrados = computed(() => {
-  let lista = pedidos.value;
-
-  if (isAuthenticated.value && filtro.value !== 'todos') {
-    lista = lista.filter(p => p.estado === filtro.value);
-  }
-
+  let lista = pedidos.value
+  if (isAuthenticated.value && filtro.value !== 'todos') lista = lista.filter(p => p.estado === filtro.value)
   if (busqueda.value.trim()) {
-    const txt = busqueda.value.toLowerCase();
-    lista = lista.filter(p => p.nombre?.toLowerCase().includes(txt));
+    const txt = busqueda.value.toLowerCase()
+    lista = lista.filter(p => p.nombre?.toLowerCase().includes(txt))
   }
+  return lista
+})
 
-  return lista;
-});
-
-// Total recaudado
+// ✅ Total recaudado
 const totalRecaudado = computed(() =>
   pedidosFiltrados.value.reduce((acc, p) => {
-    const paquete = Number(p.paquete || 0);
-    const extras = Number(p.fotosExtra || 0);
-    const totalEsperado = (paquete + extras) * PRECIO_FOTO;
-    const totalFinal = p.total > 0 ? Number(p.total) : totalEsperado;
-
-    // Actualizar Firestore si total no coincide
-    if (totalFinal !== p.total) actualizarPedido(p.id, { total: totalFinal });
-
-    return acc + totalFinal;
+    const paquete = Number(p.paquete || 0)
+    const extras = Number(p.fotosExtra || 0)
+    const totalEsperado = (paquete + extras) * PRECIO_FOTO
+    const totalFinal = p.total > 0 ? Number(p.total) : totalEsperado
+    if (totalFinal !== p.total) actualizarPedido(p.id, { total: totalFinal })
+    return acc + totalFinal
   }, 0)
-);
+)
 
-// Escuchar pedidos en tiempo real
-let unsubscribe: (() => void) | null = null;
+// ✅ Escuchar pedidos en tiempo real
+let unsubscribe: (() => void) | null = null
 onMounted(() => {
   unsubscribe = escucharPedidos((data) => {
     pedidos.value = data.map(d => ({
@@ -190,13 +202,13 @@ onMounted(() => {
       paquete: Number(d.paquete || 0),
       fotosExtra: Number(d.fotosExtra || 0),
       total: Number(d.total || 0)
-    }));
-    loading.value = false;
-  });
-});
-
-onUnmounted(() => { if (unsubscribe) unsubscribe(); });
+    }))
+    loading.value = false
+  })
+})
+onUnmounted(() => { if (unsubscribe) unsubscribe() })
 </script>
+
 
 <style scoped>
 .contenedor-pedidos {
